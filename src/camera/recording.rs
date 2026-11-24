@@ -1537,7 +1537,8 @@ mod tests {
                 break;
             }
         }
-        let out = std::env::var("REC_OUT").unwrap_or_else(|_| "/tmp/hksv-rtsp-bridge-rec.mp4".into());
+        let out =
+            std::env::var("REC_OUT").unwrap_or_else(|_| "/tmp/hksv-rtsp-bridge-rec.mp4".into());
         std::fs::write(&out, &mp4).unwrap();
         println!("fMP4: {} bytes in {:?}", mp4.len(), t0.elapsed());
         drop(hub);

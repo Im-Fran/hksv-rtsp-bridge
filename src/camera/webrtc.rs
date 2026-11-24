@@ -498,7 +498,10 @@ fn build_offer(p: &SdpParams, session_id: u64) -> String {
     ));
     l("a=simulcast:send 1");
     l(&format!("a=ssrc:{} cname:hksv-rtsp-bridge", p.video_ssrc));
-    l(&format!("a=ssrc:{} msid:hksv-rtsp-bridge video0", p.video_ssrc));
+    l(&format!(
+        "a=ssrc:{} msid:hksv-rtsp-bridge video0",
+        p.video_ssrc
+    ));
     for c in &p.candidates {
         l(&format!("a={c}"));
     }
@@ -516,7 +519,10 @@ fn build_offer(p: &SdpParams, session_id: u64) -> String {
         "a=fmtp:{AUDIO_PT} minptime=20;useinbandfec=1;stereo=0;sprop-stereo=0"
     ));
     l(&format!("a=ssrc:{} cname:hksv-rtsp-bridge", p.audio_ssrc));
-    l(&format!("a=ssrc:{} msid:hksv-rtsp-bridge audio0", p.audio_ssrc));
+    l(&format!(
+        "a=ssrc:{} msid:hksv-rtsp-bridge audio0",
+        p.audio_ssrc
+    ));
     s
 }
 
@@ -1370,7 +1376,8 @@ mod tests {
         let (w, _) = webrtc();
         let s = w.solicit(None).unwrap();
         assert!(
-            s.sdp.contains("a=msid-semantic: WMS *") && s.sdp.contains("msid:hksv-rtsp-bridge video0")
+            s.sdp.contains("a=msid-semantic: WMS *")
+                && s.sdp.contains("msid:hksv-rtsp-bridge video0")
         );
         let sum = sdp_summary(&s.sdp);
         assert!(sum.contains("a=rtpmap:99 H265/90000") && sum.contains("a=rid:1"));

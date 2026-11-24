@@ -29,7 +29,8 @@ use hap::store::FileStore;
 use media::ingest::Stream;
 use media::snapshot::Snapshotter;
 
-const USAGE: &str = "usage: hksv-rtsp-bridge [--config <path>]  (default /etc/hksv-rtsp-bridge/config.toml)";
+const USAGE: &str =
+    "usage: hksv-rtsp-bridge [--config <path>]  (default /etc/hksv-rtsp-bridge/config.toml)";
 
 /// lowercase ASCII, spaces/underscores -> '-', no accents or other symbols.
 fn slug(name: &str) -> String {
