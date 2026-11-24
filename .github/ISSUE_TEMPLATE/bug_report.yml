@@ -1,0 +1,48 @@
+name: 🐞 Bug report
+description: Something does not work as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please redact camera credentials, setup codes and IP addresses you do not want public. Never paste the contents of `state_dir`.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Pairing / discovery
+        - Live view / remote streaming
+        - Snapshots
+        - Motion sensor
+        - HomeKit Secure Video recording
+        - Docker / systemd / config
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Hub, iOS/tvOS version and camera model
+      placeholder: HomePod mini, tvOS 27, iCSee
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Run with `RUST_LOG=info,local_dvr=debug` and paste the relevant lines (redacted).
+      render: text
