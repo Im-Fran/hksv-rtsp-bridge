@@ -27,7 +27,7 @@ use crate::hap::server::ConnAddrs;
 use crate::hap::tlv8::Tlv8;
 use crate::media::ffmpeg::Ffmpeg;
 use crate::media::ingest::Stream;
-use crate::media::{AudioPacket, Frame};
+use crate::media::{AudioPacket, Codec, Frame};
 
 const RTCP_TIMEOUT: Duration = Duration::from_secs(30);
 /// Setup Endpoints without Start is discarded after this time.
@@ -91,8 +91,8 @@ pub fn status_tlv(session_id: Option<&[u8; 16]>, s: Status) -> Vec<u8> {
 /// audio when resyncing every ~3 s. Only applies to the transcode (`copy` already keeps the pts).
 pub(super) const VFR: [&str; 4] = ["-fps_mode", "vfr", "-enc_time_base", "1:90000"];
 
-/// Live video input: HEVC Annex B via stdin.
-pub(super) fn input_args() -> Vec<String> {
+/// Live video input: Annex B (H.264 or HEVC) via stdin.
+pub(super) fn input_args(codec: Codec) -> Vec<String> {
     // Live input: wall clocks and short analysis. DO NOT use `-fflags nobuffer`: with an
     // Annex B input over a pipe it discards the first GOP (IDR included) and ffmpeg starts at the P
     // that follow ("Could not find ref with POC N", first image at the next IDR, ~3 s later).
@@ -106,7 +106,7 @@ pub(super) fn input_args() -> Vec<String> {
         "-use_wallclock_as_timestamps",
         "1",
         "-f",
-        "hevc",
+        codec.ffmpeg_fmt(),
         "-i",
         "pipe:0",
     ]
@@ -192,8 +192,14 @@ pub(super) fn audio_ffmpeg_args(ep: &EndpointRequest, a: &AudioOut, ssrc: u32) -
 }
 
 /// HEVC video ffmpeg (copy or transcode) for Multi-Tier RTP.
-pub fn ffmpeg_args(tier: &Tier, ep: &EndpointRequest, video_ssrc: u32, hw: HwAccel) -> Vec<String> {
-    let mut a = input_args();
+pub fn ffmpeg_args(
+    tier: &Tier,
+    codec: Codec,
+    ep: &EndpointRequest,
+    video_ssrc: u32,
+    hw: HwAccel,
+) -> Vec<String> {
+    let mut a = input_args(codec);
     let mut add = |xs: &[&str]| a.extend(xs.iter().map(|s| s.to_string()));
     add(&["-map", "0:v:0"]);
     match (tier.source, hw) {
@@ -434,7 +440,7 @@ impl Sessions {
                 frame_ms: 20,
             }),
             desc,
-            |req, ssrc, hw| ffmpeg_args(&tier, req, ssrc, hw),
+            |codec, req, ssrc, hw| ffmpeg_args(&tier, codec, req, ssrc, hw),
         )
         .await
     }
@@ -459,7 +465,7 @@ impl Sessions {
             medium,
             audio,
             desc,
-            |req, ssrc, hw| legacy_ffmpeg_args(&sel, req, ssrc, hw),
+            |codec, req, ssrc, hw| legacy_ffmpeg_args(&sel, codec, req, ssrc, hw),
         )
         .await
     }
@@ -471,7 +477,7 @@ impl Sessions {
         medium: bool,
         audio: Option<AudioOut>,
         desc: String,
-        build_args: impl FnOnce(&EndpointRequest, u32, HwAccel) -> Vec<String>,
+        build_args: impl FnOnce(Codec, &EndpointRequest, u32, HwAccel) -> Vec<String>,
     ) -> Status {
         let stream = if from_sub { &self.sub } else { &self.main };
         let audio = audio.filter(|_| stream.info().is_some_and(|i| i.has_audio_alaw));
@@ -517,7 +523,7 @@ impl Sessions {
             Some(b) => Ffmpeg::spawn_bin(b, args),
             None => Ffmpeg::spawn(args),
         };
-        let ff = match spawn(build_args(&lreq, prep.video_ssrc, self.hw)) {
+        let ff = match spawn(build_args(stream.codec(), &lreq, prep.video_ssrc, self.hw)) {
             Ok(f) => f,
             Err(e) => {
                 tracing::warn!("could not launch ffmpeg: {e:#}");
@@ -721,25 +727,20 @@ fn spawn_paced_writer(
 /// After an overload an IDR is awaited; if the stream carries none, a keyframe is accepted.
 const IDR_WAIT: Duration = Duration::from_secs(6);
 
-/// `true` if the access unit carries an IDR slice (HEVC NAL 19/20).
-fn has_idr(annexb: &[u8]) -> bool {
-    annexb
-        .windows(4)
-        .any(|w| w[..3] == [0, 0, 1] && matches!((w[3] >> 1) & 0x3f, 19 | 20))
-}
-
 /// Feeds video to ffmpeg always starting at an IDR (keyframes carry VPS/SPS/PPS, see
 /// `ParamCache`). If the queue fills up, it discards frames until the next IDR instead of loose
 /// frames: a gap in the reference chain gives "Could not find ref with POC".
 struct VideoFeed {
+    codec: Codec,
     tx: tokio::sync::mpsc::Sender<bytes::Bytes>,
     synced: bool,
     since: Instant,
 }
 
 impl VideoFeed {
-    fn new(tx: tokio::sync::mpsc::Sender<bytes::Bytes>) -> VideoFeed {
+    fn new(codec: Codec, tx: tokio::sync::mpsc::Sender<bytes::Bytes>) -> VideoFeed {
         VideoFeed {
+            codec,
             tx,
             synced: false,
             since: Instant::now(),
@@ -755,7 +756,8 @@ impl VideoFeed {
     /// `Err` if ffmpeg no longer accepts data.
     fn send(&mut self, f: &Frame) -> Result<(), ()> {
         use tokio::sync::mpsc::error::TrySendError;
-        if !self.synced && !(has_idr(&f.annexb) || (f.keyframe && self.since.elapsed() > IDR_WAIT))
+        if !self.synced
+            && !(self.codec.has_idr(&f.annexb) || (f.keyframe && self.since.elapsed() > IDR_WAIT))
         {
             return Ok(());
         }
@@ -794,7 +796,7 @@ async fn run(
     let Some(stdin) = ff.take_stdin() else {
         return;
     };
-    let mut feed = VideoFeed::new(spawn_paced_writer(stdin, 256));
+    let mut feed = VideoFeed::new(stream.codec(), spawn_paced_writer(stdin, 256));
     for f in &backlog {
         if feed.send(f).is_err() {
             return;
@@ -904,7 +906,7 @@ mod tests {
 
     fn joined(t: u32) -> String {
         let ep = parse_request(FIXTURE).unwrap();
-        ffmpeg_args(&tier(t), &ep, 1, HwAccel::None).join(" ")
+        ffmpeg_args(&tier(t), Codec::H265, &ep, 1, HwAccel::None).join(" ")
     }
 
     #[test]
@@ -957,7 +959,7 @@ mod tests {
     #[tokio::test]
     async fn video_feed_starts_at_idr_and_drops_to_next_idr_on_overflow() {
         let (tx, mut rx) = tokio::sync::mpsc::channel(2);
-        let mut f = VideoFeed::new(tx);
+        let mut f = VideoFeed::new(Codec::H265, tx);
         let (idr, p) = (rtp_frame(true, true), rtp_frame(false, false));
         // Nothing is sent before the first IDR.
         f.send(&p).unwrap();
@@ -982,9 +984,9 @@ mod tests {
 
     #[test]
     fn has_idr_detects_nal_types() {
-        assert!(has_idr(&rtp_frame(true, true).annexb));
-        assert!(!has_idr(&rtp_frame(false, false).annexb));
-        assert!(has_idr(&[0, 0, 0, 1, 0x40, 1, 0, 0, 1, 0x28, 1])); // VPS + IDR_N_LP
+        assert!(Codec::H265.has_idr(&rtp_frame(true, true).annexb));
+        assert!(!Codec::H265.has_idr(&rtp_frame(false, false).annexb));
+        assert!(Codec::H265.has_idr(&[0, 0, 0, 1, 0x40, 1, 0, 0, 1, 0x28, 1])); // VPS + IDR_N_LP
     }
 
     /// Fake ffmpeg: consumes stdin and does nothing else.
@@ -1214,7 +1216,14 @@ mod tests {
             vsock.local_addr().unwrap().port(),
             asock.local_addr().unwrap().port(),
         );
-        let mut ff = Ffmpeg::spawn(ffmpeg_args(&tier(1), &ep, 0x1111, HwAccel::None)).unwrap();
+        let mut ff = Ffmpeg::spawn(ffmpeg_args(
+            &tier(1),
+            Codec::H265,
+            &ep,
+            0x1111,
+            HwAccel::None,
+        ))
+        .unwrap();
         let mut aff = Ffmpeg::spawn(audio_ffmpeg_args(&ep, &hsv3_audio(), 0x2222)).unwrap();
         let kf = std::fs::read("tests/fixtures/keyframe_360p.hevc").unwrap();
         let t0 = Instant::now();
@@ -1245,7 +1254,14 @@ mod tests {
             asock.local_addr().unwrap().port(),
         );
         let sel = legacy_sel([1; 16], 1280, 720); // scales 360p -> 720p: real x264 load
-        let mut ff = Ffmpeg::spawn(legacy_ffmpeg_args(&sel, &ep, 0x1111, HwAccel::None)).unwrap();
+        let mut ff = Ffmpeg::spawn(legacy_ffmpeg_args(
+            &sel,
+            Codec::H265,
+            &ep,
+            0x1111,
+            HwAccel::None,
+        ))
+        .unwrap();
         let mut aff = Ffmpeg::spawn(audio_ffmpeg_args(&ep, &hsv3_audio(), 0x2222)).unwrap();
         let kf = std::fs::read("tests/fixtures/keyframe_360p.hevc").unwrap();
         let t0 = Instant::now();
@@ -1351,7 +1367,7 @@ mod tests {
             salt: [9; 14],
         };
         let sel = legacy_sel([1; 16], 640, 360);
-        let args = legacy_ffmpeg_args(&sel, &ep, 0x1111, HwAccel::None);
+        let args = legacy_ffmpeg_args(&sel, Codec::H265, &ep, 0x1111, HwAccel::None);
         let mut ff = Ffmpeg::spawn(args).unwrap();
         let kf = std::fs::read("tests/fixtures/keyframe_360p.hevc").unwrap();
         let rx = tokio::spawn(async move {

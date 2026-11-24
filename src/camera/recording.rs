@@ -23,9 +23,9 @@ use crate::hap::model::Accessory;
 use crate::hap::tlv8::Tlv8;
 use crate::hap::uuids as u;
 use crate::hds::{DsValue, HdsConn, HdsServer, Kind, Message, reason};
-use crate::media::Frame;
 use crate::media::ffmpeg::Ffmpeg;
 use crate::media::ingest::Stream;
+use crate::media::{Codec, Frame};
 
 pub const PREBUFFER_MS: u32 = 8000;
 pub const FRAGMENT_MS: u32 = 4000;
@@ -169,7 +169,12 @@ impl Selected {
 
 /// ffmpeg arguments: HEVC Annex B via stdin (`fps` fixes the timestamps: the backlog enters more
 /// quickly than real time), optional A-law via `audio_fifo`, fMP4 via stdout.
-pub fn ffmpeg_args(sel: &Selected, fps: f32, audio_fifo: Option<&Path>) -> Vec<String> {
+pub fn ffmpeg_args(
+    codec: Codec,
+    sel: &Selected,
+    fps: f32,
+    audio_fifo: Option<&Path>,
+) -> Vec<String> {
     let mut a: Vec<String> = Vec::new();
     let mut add = |xs: &[&str]| a.extend(xs.iter().map(|s| s.to_string()));
     add(&["-probesize", "2000000", "-analyzeduration", "1000000"]);
@@ -177,7 +182,7 @@ pub fn ffmpeg_args(sel: &Selected, fps: f32, audio_fifo: Option<&Path>) -> Vec<S
         "-framerate",
         &format!("{fps:.3}"),
         "-f",
-        "hevc",
+        codec.ffmpeg_fmt(),
         "-i",
         "pipe:0",
     ]);
@@ -471,7 +476,12 @@ impl Recorder {
             u::RECORDING_AUDIO_ACTIVE,
         ) && info.is_some_and(|i| i.has_audio_alaw);
         let fifo = want_audio.then(Fifo::new).transpose()?;
-        let args = ffmpeg_args(&sel, fps, fifo.as_ref().map(|f| f.0.as_path()));
+        let args = ffmpeg_args(
+            self.main.codec(),
+            &sel,
+            fps,
+            fifo.as_ref().map(|f| f.0.as_path()),
+        );
         tracing::info!(
             "recording: camera fps {fps:.1}, audio={}, ffmpeg {}",
             fifo.is_some(),
@@ -1066,7 +1076,12 @@ mod tests {
     fn ffmpeg_args_follow_selection() {
         let sel = Selected::parse(&selected_tlv()).unwrap();
         let j = |a: Vec<String>| a.join(" ");
-        let with = j(ffmpeg_args(&sel, 25.0, Some(Path::new("/x/a.fifo"))));
+        let with = j(ffmpeg_args(
+            Codec::H265,
+            &sel,
+            25.0,
+            Some(Path::new("/x/a.fifo")),
+        ));
         assert!(
             with.contains("-framerate 25.000 -f hevc -i pipe:0"),
             "{with}"
@@ -1088,7 +1103,7 @@ mod tests {
         );
         assert!(with.contains("n_forced*4"), "{with}");
         assert!(with.ends_with("-f mp4 pipe:1"), "{with}");
-        let without = j(ffmpeg_args(&sel, 25.0, None));
+        let without = j(ffmpeg_args(Codec::H265, &sel, 25.0, None));
         assert!(
             !without.contains("alaw") && !without.contains("-c:a"),
             "{without}"
