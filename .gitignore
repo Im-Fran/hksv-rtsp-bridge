@@ -7,3 +7,4 @@ state/
 worktrees/
 docs/superpowers/
 docs/spikes/
+.DS_Store
