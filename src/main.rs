@@ -29,7 +29,8 @@ use hap::store::FileStore;
 use media::ingest::Stream;
 use media::snapshot::Snapshotter;
 
-const USAGE: &str = "usage: local-dvr [--config <path>]  (default /etc/local-dvr/config.toml)";
+const USAGE: &str =
+    "usage: hksv-rtsp-bridge [--config <path>]  (default /etc/hksv-rtsp-bridge/config.toml)";
 
 /// lowercase ASCII, spaces/underscores -> '-', no accents or other symbols.
 fn slug(name: &str) -> String {
@@ -51,7 +52,7 @@ fn slug(name: &str) -> String {
 }
 
 fn parse_args() -> Result<Option<PathBuf>> {
-    let mut path = PathBuf::from("/etc/local-dvr/config.toml");
+    let mut path = PathBuf::from("/etc/hksv-rtsp-bridge/config.toml");
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {

@@ -21,7 +21,7 @@ Helpful things to include:
 
 - What the issue is and what an attacker gets out of it.
 - Steps to reproduce, or a proof of concept.
-- The `local-dvr` version or commit, how it is deployed (Docker, systemd, source) and the host OS.
+- The `hksv-rtsp-bridge` version or commit, how it is deployed (Docker, systemd, source) and the host OS.
 
 Please never paste camera credentials, setup codes or the contents of `state_dir` in a report; redact them first.
 
@@ -35,7 +35,7 @@ Please give a reasonable window for a fix before disclosing publicly.
 
 ## Scope
 
-`local-dvr` runs on a home network and speaks HomeKit (HAP) to a home hub. In scope:
+`hksv-rtsp-bridge` runs on a home network and speaks HomeKit (HAP) to a home hub. In scope:
 
 - The HAP server: pairing (SRP), pair-verify, encrypted sessions and permission checks.
 - The HomeKit Data Stream and the recording pipeline.

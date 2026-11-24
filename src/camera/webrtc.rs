@@ -47,9 +47,9 @@ const MIN_MAX_BR_KBPS: u32 = 400;
 /// Value of the `rtp-stream-id` header extension in every video packet (a=rid:1 of the offer).
 const RID: &str = "1";
 
-/// `LOCAL_DVR_WEBRTC_RID=0` disables the rid header extension (the references don't send it).
+/// `HKSV_RTSP_BRIDGE_WEBRTC_RID=0` disables the rid header extension (the references don't send it).
 fn send_rid() -> bool {
-    std::env::var("LOCAL_DVR_WEBRTC_RID").map_or(true, |v| v != "0")
+    std::env::var("HKSV_RTSP_BRIDGE_WEBRTC_RID").map_or(true, |v| v != "0")
 }
 
 /// WebRTC Streaming Status states (guide 4.18/4.19).
@@ -477,7 +477,7 @@ fn build_offer(p: &SdpParams, session_id: u64) -> String {
     l("a=rtcp:9 IN IP4 0.0.0.0");
     ice(&mut l);
     l("a=mid:0");
-    l("a=msid:local-dvr video0");
+    l("a=msid:hksv-rtsp-bridge video0");
     l("a=extmap:1 urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id");
     l("a=sendonly");
     l("a=rtcp-mux");
@@ -497,8 +497,11 @@ fn build_offer(p: &SdpParams, session_id: u64) -> String {
         kbps * 1000
     ));
     l("a=simulcast:send 1");
-    l(&format!("a=ssrc:{} cname:local-dvr", p.video_ssrc));
-    l(&format!("a=ssrc:{} msid:local-dvr video0", p.video_ssrc));
+    l(&format!("a=ssrc:{} cname:hksv-rtsp-bridge", p.video_ssrc));
+    l(&format!(
+        "a=ssrc:{} msid:hksv-rtsp-bridge video0",
+        p.video_ssrc
+    ));
     for c in &p.candidates {
         l(&format!("a={c}"));
     }
@@ -508,15 +511,18 @@ fn build_offer(p: &SdpParams, session_id: u64) -> String {
     l("a=rtcp:9 IN IP4 0.0.0.0");
     ice(&mut l);
     l("a=mid:1");
-    l("a=msid:local-dvr audio0");
+    l("a=msid:hksv-rtsp-bridge audio0");
     l("a=sendonly");
     l("a=rtcp-mux");
     l(&format!("a=rtpmap:{AUDIO_PT} opus/48000/2"));
     l(&format!(
         "a=fmtp:{AUDIO_PT} minptime=20;useinbandfec=1;stereo=0;sprop-stereo=0"
     ));
-    l(&format!("a=ssrc:{} cname:local-dvr", p.audio_ssrc));
-    l(&format!("a=ssrc:{} msid:local-dvr audio0", p.audio_ssrc));
+    l(&format!("a=ssrc:{} cname:hksv-rtsp-bridge", p.audio_ssrc));
+    l(&format!(
+        "a=ssrc:{} msid:hksv-rtsp-bridge audio0",
+        p.audio_ssrc
+    ));
     s
 }
 
@@ -575,7 +581,7 @@ fn build_reanswer(p: &SdpParams, dtls_active: bool, offer: &str) -> Result<Strin
                 "a=rtpmap:{AUDIO_PT} opus/48000/2\r\na=fmtp:{AUDIO_PT} minptime=20;useinbandfec=1;stereo=0;sprop-stereo=0\r\n"
             ));
         }
-        s.push_str(&format!("a=ssrc:{ssrc} cname:local-dvr\r\n"));
+        s.push_str(&format!("a=ssrc:{ssrc} cname:hksv-rtsp-bridge\r\n"));
     }
     Ok(s)
 }
@@ -1370,7 +1376,8 @@ mod tests {
         let (w, _) = webrtc();
         let s = w.solicit(None).unwrap();
         assert!(
-            s.sdp.contains("a=msid-semantic: WMS *") && s.sdp.contains("msid:local-dvr video0")
+            s.sdp.contains("a=msid-semantic: WMS *")
+                && s.sdp.contains("msid:hksv-rtsp-bridge video0")
         );
         let sum = sdp_summary(&s.sdp);
         assert!(sum.contains("a=rtpmap:99 H265/90000") && sum.contains("a=rid:1"));

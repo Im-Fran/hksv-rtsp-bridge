@@ -10,7 +10,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ffmpeg ca-certificates vainfo i965-va-driver intel-media-va-driver \
  && rm -rf /var/lib/apt/lists/*
-COPY --from=build /src/target/release/local-dvr /usr/local/bin/local-dvr
+COPY --from=build /src/target/release/hksv-rtsp-bridge /usr/local/bin/hksv-rtsp-bridge
 
-ENTRYPOINT ["local-dvr"]
-CMD ["--config", "/etc/local-dvr/config.toml"]
+ENTRYPOINT ["hksv-rtsp-bridge"]
+CMD ["--config", "/etc/hksv-rtsp-bridge/config.toml"]

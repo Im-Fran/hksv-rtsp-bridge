@@ -44,5 +44,5 @@ body:
     id: logs
     attributes:
       label: Logs
-      description: Run with `RUST_LOG=info,local_dvr=debug` and paste the relevant lines (redacted).
+      description: Run with `RUST_LOG=info,hksv_rtsp_bridge=debug` and paste the relevant lines (redacted).
       render: text

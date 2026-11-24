@@ -186,7 +186,7 @@ fn accessory_information(b: &mut Builder, name: &str, device_id: &str) {
         false,
         vec![
             (u::IDENTIFY, Format::Bool, Perms::PW, Value::Null),
-            (u::MANUFACTURER, Format::String, PR, s("local-dvr")),
+            (u::MANUFACTURER, Format::String, PR, s("hksv-rtsp-bridge")),
             (u::MODEL, Format::String, PR, s("RTSP Camera Bridge")),
             (u::NAME, Format::String, PR, s(name)),
             (u::SERIAL_NUMBER, Format::String, PR, s(device_id)),

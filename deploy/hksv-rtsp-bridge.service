@@ -1,0 +1,31 @@
+# Install: copy the binary to /usr/local/bin/hksv-rtsp-bridge, the TOML to /etc/hksv-rtsp-bridge/config.toml
+# (root:hksv-rtsp-bridge 0640, it holds credentials) and create the system user:
+#   useradd --system --no-create-home --shell /usr/sbin/nologin hksv-rtsp-bridge
+#   usermod -aG render,video hksv-rtsp-bridge   # only if hwaccel = "vaapi"
+[Unit]
+Description=hksv-rtsp-bridge: RTSP to HomeKit bridge
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=hksv-rtsp-bridge
+Group=hksv-rtsp-bridge
+SupplementaryGroups=render video
+ExecStart=/usr/local/bin/hksv-rtsp-bridge --config /etc/hksv-rtsp-bridge/config.toml
+Restart=on-failure
+RestartSec=5
+# state_dir = "/var/lib/hksv-rtsp-bridge" in the TOML; systemd creates the directory with 0700, owned by hksv-rtsp-bridge.
+DynamicUser=no
+StateDirectory=hksv-rtsp-bridge
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=multi-user.target

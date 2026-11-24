@@ -1,7 +1,7 @@
 services:
-  local-dvr:
+  hksv-rtsp-bridge:
     build: .
-    image: local-dvr
+    image: hksv-rtsp-bridge
     # mDNS/Bonjour needs the same L2 network as the hub.
     network_mode: host
     restart: unless-stopped
@@ -9,5 +9,5 @@ services:
     devices:
       - /dev/dri:/dev/dri
     volumes:
-      - ./config.toml:/etc/local-dvr/config.toml:ro
-      - ./state:/var/lib/local-dvr
+      - ./config.toml:/etc/hksv-rtsp-bridge/config.toml:ro
+      - ./state:/var/lib/hksv-rtsp-bridge

@@ -5,7 +5,7 @@
 # HomeKit pairing code, format DDD-DD-DDD.
 setup_code = "031-45-154"
 # Generated state (keys, pairings). Permissions 0700.
-state_dir = "/var/lib/local-dvr"
+state_dir = "/var/lib/hksv-rtsp-bridge"
 # "::" = dual-stack (IPv4 + IPv6). On Linux this depends on net.ipv6.bindv6only=0; "0.0.0.0" = IPv4 only.
 bind = "::"
 base_port = 51830
