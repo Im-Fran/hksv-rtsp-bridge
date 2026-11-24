@@ -1,0 +1,9 @@
+target/
+config.toml
+/spikes/
+*.bak
+.superpowers/
+state/
+worktrees/
+docs/superpowers/
+docs/spikes/

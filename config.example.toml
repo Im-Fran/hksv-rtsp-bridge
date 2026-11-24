@@ -1,0 +1,29 @@
+# Copy to config.toml (git-ignored) and fill in. Never commit real credentials.
+# U = camera user, P = camera password.
+
+[server]
+# HomeKit pairing code, format DDD-DD-DDD.
+setup_code = "031-45-154"
+# Generated state (keys, pairings). Permissions 0700.
+state_dir = "/var/lib/local-dvr"
+# "::" = dual-stack (IPv4 + IPv6). On Linux this depends on net.ipv6.bindv6only=0; "0.0.0.0" = IPv4 only.
+bind = "::"
+base_port = 51830
+hwaccel = "none"          # "none" | "vaapi"
+prebuffer_secs = 8
+motion_hold_secs = 10     # MotionDetected stays true N s after the last alarm (HKSV needs long events)
+# max_resolution = "360p"  # advertise only 640x360 (sub stream, no 2K transcoding)
+# By default each camera is ONE accessory with the classic HomeKit camera services (H.264 + Opus, HAP 110),
+# which works on Wi-Fi and cellular. HSV3 (H.265, iOS 27) is disabled until Apple stabilizes it.
+# hsv3 = true     # also publishes the HSV3 services; `legacy` then applies:
+# legacy = "same" #   "same" = classic in the same accessory | "separate" = second accessory
+#                 #   "<name> (H.264)" | "off"
+# CPU note: with hwaccel = "none", 1280x720 H.264 is upscaled from the 640x360 sub stream
+# (the 2K main stream is not decoded, which is heavy on an i3-2120); with hwaccel = "vaapi" it comes from main.
+
+[[camera]]
+name = "Exterior"
+main = "rtsp://192.168.1.10:554/user=U&password=P&channel=1&stream=0.sdp?real_stream"
+sub = "rtsp://192.168.1.10:554/user=U&password=P&channel=1&stream=1.sdp?real_stream"
+motion = "dvrip://U:P@192.168.1.10:34567"
+# snapshot = "..."       # optional

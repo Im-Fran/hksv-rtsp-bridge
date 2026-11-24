@@ -1,0 +1,13 @@
+services:
+  local-dvr:
+    build: .
+    image: local-dvr
+    # mDNS/Bonjour needs the same L2 network as the hub.
+    network_mode: host
+    restart: unless-stopped
+    # Only for hwaccel = "vaapi". Remove this block if there is no /dev/dri (or hwaccel = "none").
+    devices:
+      - /dev/dri:/dev/dri
+    volumes:
+      - ./config.toml:/etc/local-dvr/config.toml:ro
+      - ./state:/var/lib/local-dvr

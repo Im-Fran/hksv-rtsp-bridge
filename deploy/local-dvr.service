@@ -1,0 +1,31 @@
+# Install: copy the binary to /usr/local/bin/local-dvr, the TOML to /etc/local-dvr/config.toml
+# (root:local-dvr 0640, it holds credentials) and create the system user:
+#   useradd --system --no-create-home --shell /usr/sbin/nologin local-dvr
+#   usermod -aG render,video local-dvr   # only if hwaccel = "vaapi"
+[Unit]
+Description=local-dvr: RTSP to HomeKit bridge
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=local-dvr
+Group=local-dvr
+SupplementaryGroups=render video
+ExecStart=/usr/local/bin/local-dvr --config /etc/local-dvr/config.toml
+Restart=on-failure
+RestartSec=5
+# state_dir = "/var/lib/local-dvr" in the TOML; systemd creates the directory with 0700, owned by local-dvr.
+DynamicUser=no
+StateDirectory=local-dvr
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=multi-user.target
