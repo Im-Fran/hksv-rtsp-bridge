@@ -75,13 +75,15 @@ docker compose logs -f local-dvr
 
 `compose.yaml` uses `network_mode: host` (required for mDNS) and mounts `./config.toml` (read-only), `./state` and `/dev/dri`. Remove the `/dev/dri` block if you use `hwaccel = "none"` or the host has no Intel GPU.
 
-Prebuilt images are published to GitHub Container Registry on every release tag (`linux/amd64`):
+Prebuilt multi-arch images (`linux/amd64` and `linux/arm64`) are published to GitHub Container Registry on every release tag:
 
 ```bash
 docker pull ghcr.io/im-fran/hksv-rtsp-bridge:latest
 ```
 
 To use it, replace `build: .` with `image: ghcr.io/im-fran/hksv-rtsp-bridge:<version>` in `compose.yaml`.
+
+Notes for the `arm64` image (Apple Silicon, Raspberry Pi, ...): VAAPI drivers are Intel-only and are not included, so use `hwaccel = "none"` and remove the `/dev/dri` block. Docker Desktop on macOS runs containers inside a VM, so `network_mode: host` does not expose the container to your LAN and HomeKit will not discover it over mDNS; on a Mac, run the native binary (option 3) instead.
 
 ### 3. Or build and run from source
 
