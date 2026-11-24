@@ -5,10 +5,14 @@ COPY . .
 RUN cargo build --release --locked
 
 FROM debian:bookworm-slim
-# i965-va-driver covers Sandy Bridge (i3-2120); intel-media-va-driver covers Gen8+. vainfo helps diagnose VAAPI.
+ARG TARGETARCH
+# VAAPI drivers are Intel-only, so they exist for amd64 only: i965-va-driver covers Sandy Bridge (i3-2120),
+# intel-media-va-driver covers Gen8+, and vainfo helps diagnose VAAPI. arm64 images run with hwaccel = "none".
 RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-      ffmpeg ca-certificates vainfo i965-va-driver intel-media-va-driver \
+ && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
+ && if [ "$TARGETARCH" = "amd64" ]; then \
+      apt-get install -y --no-install-recommends vainfo i965-va-driver intel-media-va-driver; \
+    fi \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=build /src/target/release/hksv-rtsp-bridge /usr/local/bin/hksv-rtsp-bridge
 
