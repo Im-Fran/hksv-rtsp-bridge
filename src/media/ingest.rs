@@ -14,14 +14,14 @@ use anyhow::{Context, Result};
 use bytes::{BufMut, Bytes, BytesMut};
 use futures::StreamExt;
 use retina::client::{
-    InitialTimestampPolicy, PlayOptions, Session, SessionOptions, SetupOptions,
+    InitialTimestampPolicy, PlayOptions, Session, SessionIdPolicy, SessionOptions, SetupOptions,
     TcpTransportOptions, Transport,
 };
 use retina::codec::{CodecItem, FrameFormat, ParametersRef};
 use tokio::sync::broadcast;
 
 use super::ring::Ring;
-use super::{AudioPacket, Frame, StreamInfo};
+use super::{AudioPacket, Codec, Frame, StreamInfo};
 use crate::redact::redact;
 
 const CHANNEL_CAP: usize = 256;
@@ -30,6 +30,7 @@ const FRAME_TIMEOUT: Duration = Duration::from_secs(10);
 struct Inner {
     info: Mutex<Option<StreamInfo>>,
     connected: AtomicBool,
+    codec: Mutex<Codec>,
     ring: Arc<RwLock<Ring>>,
     video: Mutex<broadcast::Sender<Frame>>,
     audio: Mutex<broadcast::Sender<AudioPacket>>,
@@ -44,6 +45,7 @@ impl Stream {
         let inner = Arc::new(Inner {
             info: Mutex::new(None),
             connected: AtomicBool::new(false),
+            codec: Mutex::new(Codec::default()),
             ring: Arc::new(RwLock::new(Ring::new(secs))),
             video: Mutex::new(broadcast::channel(CHANNEL_CAP).0),
             audio: Mutex::new(broadcast::channel(CHANNEL_CAP).0),
@@ -63,6 +65,7 @@ impl Stream {
         Stream(Arc::new(Inner {
             info: Mutex::new(None),
             connected: AtomicBool::new(true),
+            codec: Mutex::new(Codec::default()),
             ring: Arc::new(RwLock::new(Ring::new(secs))),
             video: Mutex::new(broadcast::channel(CHANNEL_CAP).0),
             audio: Mutex::new(broadcast::channel(CHANNEL_CAP).0),
@@ -87,6 +90,11 @@ impl Stream {
     /// Last known info (kept while disconnected).
     pub fn info(&self) -> Option<StreamInfo> {
         self.0.info.lock().unwrap().clone()
+    }
+
+    /// Codec of the last connection (H.265 until the first one).
+    pub fn codec(&self) -> Codec {
+        *self.0.codec.lock().unwrap()
     }
 
     pub fn is_connected(&self) -> bool {
@@ -148,8 +156,9 @@ async fn run(inner: Arc<Inner>, url: String) {
     }
 }
 
-/// Positions of the VPS/SPS/PPS NAL units (32..=34) as (type, NAL range without start code).
-fn param_sets(data: &[u8]) -> Vec<(u8, std::ops::Range<usize>)> {
+/// Positions of the parameter-set NAL units as (slot, NAL range without start code):
+/// H.265 VPS/SPS/PPS (types 32..=34 -> slots 0..=2), H.264 SPS/PPS (types 7, 8 -> slots 1, 2).
+fn param_sets(codec: Codec, data: &[u8]) -> Vec<(u8, std::ops::Range<usize>)> {
     let mut starts = vec![];
     let mut i = 0;
     while i + 3 < data.len() {
@@ -166,29 +175,47 @@ fn param_sets(data: &[u8]) -> Vec<(u8, std::ops::Range<usize>)> {
         while e > s && data[e - 1] == 0 {
             e -= 1; // the extra 0 of a 4-byte start code
         }
-        let t = (data[s] >> 1) & 0x3f;
-        if (32..=34).contains(&t) {
-            out.push((t, s..e));
+        let slot = match codec {
+            Codec::H265 => Some(((data[s] >> 1) & 0x3f).wrapping_sub(32)).filter(|t| *t <= 2),
+            Codec::H264 => match data[s] & 0x1f {
+                7 => Some(1),
+                8 => Some(2),
+                _ => None,
+            },
+        };
+        if let Some(slot) = slot {
+            out.push((slot, s..e));
         }
     }
     out
 }
 
 /// Keeps the latest VPS/SPS/PPS and prepends them to keyframes that lack them.
-#[derive(Default)]
-struct ParamCache([Option<Bytes>; 3]);
+struct ParamCache {
+    codec: Codec,
+    sets: [Option<Bytes>; 3],
+}
 
 impl ParamCache {
-    fn process(&mut self, data: &[u8], keyframe: bool) -> Bytes {
-        let found = param_sets(data);
-        for (t, r) in &found {
-            self.0[(*t - 32) as usize] = Some(Bytes::copy_from_slice(&data[r.clone()]));
+    fn new(codec: Codec) -> Self {
+        ParamCache {
+            codec,
+            sets: Default::default(),
         }
-        if !keyframe || found.len() >= 3 || self.0.iter().any(|p| p.is_none()) {
+    }
+
+    fn process(&mut self, data: &[u8], keyframe: bool) -> Bytes {
+        let found = param_sets(self.codec, data);
+        for (slot, r) in &found {
+            self.sets[*slot as usize] = Some(Bytes::copy_from_slice(&data[r.clone()]));
+        }
+        // H.264 has no VPS: slot 0 stays empty and only SPS+PPS are needed.
+        let need = if self.codec == Codec::H264 { 2 } else { 3 };
+        if !keyframe || found.len() >= need || self.sets.iter().flatten().count() < need {
             return Bytes::copy_from_slice(data);
         }
         let mut b = BytesMut::new();
-        for p in self.0.iter().flatten() {
+        for p in self.sets.iter().flatten() {
             b.put_slice(&[0, 0, 0, 1]);
             b.put_slice(p);
         }
@@ -199,12 +226,20 @@ impl ParamCache {
 
 async fn session(inner: &Inner, url: &str, backoff: &mut Duration) -> Result<()> {
     let parsed = url::Url::parse(url).context("invalid RTSP URL")?;
-    let mut s = Session::describe(parsed, SessionOptions::default()).await?;
+    // Some cameras (H.264 firmware) answer each SETUP with a different Session id: keep the first.
+    let opts = SessionOptions::default().session_id(SessionIdPolicy::UseFirst);
+    let mut s = Session::describe(parsed, opts).await?;
     let vi = s
         .streams()
         .iter()
         .position(|s| s.media() == "video")
         .context("no video stream")?;
+    let codec = match s.streams()[vi].encoding_name() {
+        "h264" => Codec::H264,
+        "h265" => Codec::H265,
+        other => anyhow::bail!("unsupported video codec {other:?}"),
+    };
+    *inner.codec.lock().unwrap() = codec;
     let ai = s
         .streams()
         .iter()
@@ -222,7 +257,7 @@ async fn session(inner: &Inner, url: &str, backoff: &mut Duration) -> Result<()>
     tracing::info!(url = %redact(url), has_audio, "RTSP ingest connected");
     inner.connected.store(true, Ordering::Relaxed);
 
-    let mut params = ParamCache::default();
+    let mut params = ParamCache::new(codec);
     let (mut n, mut first_ts, mut dims) = (0u64, 0i64, None);
     loop {
         let item = tokio::time::timeout(FRAME_TIMEOUT, d.next())
@@ -282,7 +317,7 @@ mod tests {
 
     #[test]
     fn param_cache_prepends_missing() {
-        let mut c = ParamCache::default();
+        let mut c = ParamCache::new(Codec::H265);
         let kf1 = [
             &[0, 0, 0, 1, 0x40, 1, 9][..],
             &[0, 0, 0, 1, 0x42, 1, 8],
@@ -293,9 +328,26 @@ mod tests {
         assert_eq!(c.process(&kf1, true), kf1);
         let kf2 = [0, 0, 1, 0x26, 1, 5];
         let out = c.process(&kf2, true);
-        assert_eq!(param_sets(&out).len(), 3);
+        assert_eq!(param_sets(Codec::H265, &out).len(), 3);
         assert!(out.ends_with(&kf2));
         assert_eq!(c.process(&kf2, false), kf2.to_vec()); // P-frames left intact
+    }
+
+    #[test]
+    fn param_cache_h264_prepends_sps_pps() {
+        let mut c = ParamCache::new(Codec::H264);
+        let kf1 = [
+            &[0, 0, 0, 1, 0x67, 1][..], // SPS
+            &[0, 0, 0, 1, 0x68, 2],     // PPS
+            &[0, 0, 1, 0x65, 3],        // IDR
+        ]
+        .concat();
+        assert_eq!(c.process(&kf1, true), kf1);
+        let kf2 = [0, 0, 1, 0x65, 4];
+        let out = c.process(&kf2, true);
+        assert_eq!(param_sets(Codec::H264, &out).len(), 2);
+        assert!(out.ends_with(&kf2));
+        assert!(Codec::H264.has_idr(&kf2) && !Codec::H264.has_idr(&[0, 0, 1, 0x41, 1]));
     }
 
     fn live_url() -> String {
@@ -330,7 +382,10 @@ mod tests {
                 break f;
             }
         };
-        let types: Vec<u8> = param_sets(&kf.annexb).iter().map(|p| p.0).collect();
+        let types: Vec<u8> = param_sets(Codec::H265, &kf.annexb)
+            .iter()
+            .map(|p| p.0)
+            .collect();
         assert_eq!(&types[..3], &[32, 33, 34]);
         assert!(kf.annexb.starts_with(&[0, 0, 0, 1, 0x40]));
         assert!(s.latest_keyframe().is_some());

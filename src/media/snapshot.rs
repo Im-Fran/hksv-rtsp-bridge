@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 
+use super::Codec;
 use super::ffmpeg::Ffmpeg;
 use super::ingest::Stream;
 use crate::redact::redact;
@@ -15,8 +16,8 @@ const HTTP_TIMEOUT: Duration = Duration::from_secs(2);
 const FFMPEG_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// `w`/`h` = 0: original size (unscaled), as go2rtc does when the request has no dimensions.
-pub fn snapshot_args(w: u32, h: u32) -> Vec<String> {
-    let mut a: Vec<String> = ["-f", "hevc", "-i", "-", "-frames:v", "1"]
+pub fn snapshot_args(codec: Codec, w: u32, h: u32) -> Vec<String> {
+    let mut a: Vec<String> = ["-f", codec.ffmpeg_fmt(), "-i", "-", "-frames:v", "1"]
         .map(String::from)
         .to_vec();
     if w > 0 && h > 0 {
@@ -31,9 +32,9 @@ pub fn snapshot_args(w: u32, h: u32) -> Vec<String> {
     a
 }
 
-async fn encode_keyframe(annexb: &[u8], w: u32, h: u32) -> Result<Vec<u8>> {
+async fn encode_keyframe(codec: Codec, annexb: &[u8], w: u32, h: u32) -> Result<Vec<u8>> {
     let run = async {
-        let mut f = Ffmpeg::spawn(snapshot_args(w, h))?;
+        let mut f = Ffmpeg::spawn(snapshot_args(codec, w, h))?;
         f.write(annexb).await?;
         f.wait_output().await
     };
@@ -110,7 +111,7 @@ impl Snapshotter {
             .sub
             .latest_keyframe()
             .context("no keyframe available")?;
-        encode_keyframe(&kf.annexb, w, h).await
+        encode_keyframe(self.sub.codec(), &kf.annexb, w, h).await
     }
 }
 
@@ -127,7 +128,7 @@ mod tests {
 
     #[test]
     fn snapshot_args_has_scale_and_mjpeg() {
-        let a = snapshot_args(640, 360).join(" ");
+        let a = snapshot_args(Codec::H265, 640, 360).join(" ");
         assert!(a.contains("-f hevc"), "{a}");
         assert!(a.contains("scale=640:360"), "{a}");
         assert!(a.contains("mjpeg"), "{a}");
@@ -135,7 +136,7 @@ mod tests {
 
     #[test]
     fn snapshot_args_without_dimensions_keep_original_size() {
-        let a = snapshot_args(0, 0).join(" ");
+        let a = snapshot_args(Codec::H265, 0, 0).join(" ");
         assert!(!a.contains("scale") && a.contains("mjpeg"), "{a}");
     }
 
@@ -147,9 +148,9 @@ mod tests {
             "/tests/fixtures/keyframe_360p.hevc"
         ))
         .unwrap();
-        let jpg = encode_keyframe(&kf, 640, 360).await.unwrap();
+        let jpg = encode_keyframe(Codec::H265, &kf, 640, 360).await.unwrap();
         assert_eq!(&jpg[..2], &[0xFF, 0xD8]);
-        let big = encode_keyframe(&kf, 1920, 1080).await.unwrap();
+        let big = encode_keyframe(Codec::H265, &kf, 1920, 1080).await.unwrap();
         assert_eq!(&big[..2], &[0xFF, 0xD8]);
     }
 }

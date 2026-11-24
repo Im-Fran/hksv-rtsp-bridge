@@ -10,6 +10,7 @@ use super::rtp_session::{VFR, input_args, video_out_args};
 use super::setup_endpoints::EndpointRequest;
 use crate::config::{HwAccel, MaxResolution};
 use crate::hap::tlv8::Tlv8;
+use crate::media::Codec;
 
 pub const VIDEO_PT: u8 = 99;
 pub const AUDIO_PT: u8 = 110;
@@ -226,17 +227,18 @@ fn level_name(l: u8) -> &'static str {
     }
 }
 
-/// ffmpeg: HEVC (Annex B on stdin) -> H.264 (+ Opus) -> SRTP to the controller.
+/// ffmpeg: H.264/HEVC (Annex B on stdin) -> H.264 (+ Opus) -> SRTP to the controller.
 /// 640x360 is read from the sub stream and 1280x720 from the main stream (the caller picks the stream with `uses_sub`).
 /// The SSRC is the one advertised in Setup Endpoints. Audio goes in another ffmpeg (`audio_ffmpeg_args`).
 pub fn legacy_ffmpeg_args(
     sel: &SelectedConfig,
+    codec: Codec,
     ep: &EndpointRequest,
     video_ssrc: u32,
     hw: HwAccel,
 ) -> Vec<String> {
     let v = &sel.video;
-    let mut a = input_args();
+    let mut a = input_args(codec);
     let mut add = |xs: &[&str]| a.extend(xs.iter().map(|s| s.to_string()));
     let kbps = if v.max_kbps == 0 {
         600
@@ -327,7 +329,7 @@ mod tests {
 
     fn args(s: &SelectedConfig, hw: HwAccel) -> String {
         let ep = parse_request(FIXTURE).unwrap();
-        legacy_ffmpeg_args(s, &ep, 7, hw).join(" ")
+        legacy_ffmpeg_args(s, Codec::H265, &ep, 7, hw).join(" ")
     }
 
     #[test]
