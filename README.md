@@ -1,6 +1,6 @@
 <div align="center">
 
-# 📹 local-dvr
+# 📹 hksv-rtsp-bridge
 
 **A lightweight Rust bridge that publishes RTSP cameras to Apple HomeKit: live view, remote streaming, motion sensor and HomeKit Secure Video recordings in iCloud.**
 
@@ -12,7 +12,7 @@
 
 ## 📖 Overview
 
-`local-dvr` is a small service written in Rust that runs in a homelab and makes cheap RTSP cameras show up in the Apple Home app as native HomeKit cameras. It was built for my own house: iCSee (Xiongmai) cameras on the LAN, a HomePod mini as the home hub, and no cloud service in between.
+`hksv-rtsp-bridge` is a small service written in Rust that runs in a homelab and makes cheap RTSP cameras show up in the Apple Home app as native HomeKit cameras. It was built for my own house: iCSee (Xiongmai) cameras on the LAN, a HomePod mini as the home hub, and no cloud service in between.
 
 Each camera is published as its own HomeKit accessory with its own identity and pairing. The Home app can watch it live (at home and over cellular), take snapshots, show motion notifications and record clips with HomeKit Secure Video (HKSV), which the home hub analyzes and stores end-to-end encrypted in iCloud.
 
@@ -46,7 +46,7 @@ Disabled by default: H.265 and the HSV3/WebRTC services (`hsv3 = false`). Apple 
 ## 📋 Requirements
 
 - **Home hub**: a HomePod or Apple TV running iOS/tvOS 27. Tested with a HomePod mini and an iPhone.
-- **Network**: the host running `local-dvr` must be on the **same layer-2 network** as the hub, because HomeKit discovers accessories through mDNS/Bonjour. A different VLAN or a guest Wi-Fi will not work.
+- **Network**: the host running `hksv-rtsp-bridge` must be on the **same layer-2 network** as the hub, because HomeKit discovers accessories through mDNS/Bonjour. A different VLAN or a guest Wi-Fi will not work.
 - **ffmpeg** at runtime, built with `libx264`, `libopus` and `aac`. The Docker image already includes it.
 - **Cameras**: at least one with a main and a sub stream over RTSP.
 - **To build**: Rust 1.85 or newer (edition 2024).
@@ -68,9 +68,9 @@ Edit `config.toml` with your cameras, then run it.
 ### 2. Run with Docker (recommended)
 
 ```bash
-mkdir -m 700 state                 # ./state is mounted as /var/lib/local-dvr
+mkdir -m 700 state                 # ./state is mounted as /var/lib/hksv-rtsp-bridge
 docker compose up -d --build
-docker compose logs -f local-dvr
+docker compose logs -f hksv-rtsp-bridge
 ```
 
 `compose.yaml` uses `network_mode: host` (required for mDNS) and mounts `./config.toml` (read-only), `./state` and `/dev/dri`. Remove the `/dev/dri` block if you use `hwaccel = "none"` or the host has no Intel GPU.
@@ -87,23 +87,23 @@ To use it, replace `build: .` with `image: ghcr.io/im-fran/hksv-rtsp-bridge:<ver
 
 ```bash
 cargo build --release
-RUST_LOG=info ./target/release/local-dvr --config config.toml
+RUST_LOG=info ./target/release/hksv-rtsp-bridge --config config.toml
 ```
 
-The default config path is `/etc/local-dvr/config.toml`.
+The default config path is `/etc/hksv-rtsp-bridge/config.toml`.
 
 ### 4. Or install as a systemd service
 
-`deploy/local-dvr.service` runs the binary as a dedicated system user, with `StateDirectory=local-dvr` and basic hardening.
+`deploy/hksv-rtsp-bridge.service` runs the binary as a dedicated system user, with `StateDirectory=hksv-rtsp-bridge` and basic hardening.
 
 ```bash
-sudo install -m 0755 target/release/local-dvr /usr/local/bin/local-dvr
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin local-dvr
-sudo install -d -m 0750 -o root -g local-dvr /etc/local-dvr
-sudo install -m 0640 -o root -g local-dvr config.toml /etc/local-dvr/config.toml
-sudo install -m 0644 deploy/local-dvr.service /etc/systemd/system/local-dvr.service
+sudo install -m 0755 target/release/hksv-rtsp-bridge /usr/local/bin/hksv-rtsp-bridge
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin hksv-rtsp-bridge
+sudo install -d -m 0750 -o root -g hksv-rtsp-bridge /etc/hksv-rtsp-bridge
+sudo install -m 0640 -o root -g hksv-rtsp-bridge config.toml /etc/hksv-rtsp-bridge/config.toml
+sudo install -m 0644 deploy/hksv-rtsp-bridge.service /etc/systemd/system/hksv-rtsp-bridge.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now local-dvr
+sudo systemctl enable --now hksv-rtsp-bridge
 ```
 
 With `hwaccel = "vaapi"`, also add the user to the `render` and `video` groups.
@@ -115,7 +115,7 @@ Example (`config.example.toml` has more comments):
 ```toml
 [server]
 setup_code = "031-45-154"          # HomeKit pairing code, format DDD-DD-DDD
-state_dir = "/var/lib/local-dvr"   # keys and pairings; permissions 0700
+state_dir = "/var/lib/hksv-rtsp-bridge"   # keys and pairings; permissions 0700
 bind = "::"                        # dual-stack; "0.0.0.0" = IPv4 only
 base_port = 51830
 hwaccel = "none"                   # "none" | "vaapi"
@@ -152,7 +152,7 @@ Logs mask `user:pass@` and `user=`/`password=` in camera URLs. Still, review log
 
 ## 🔗 Pairing
 
-1. Start `local-dvr`. Each camera advertises an `_hap._tcp` accessory with its name and port (`base_port + i`).
+1. Start `hksv-rtsp-bridge`. Each camera advertises an `_hap._tcp` accessory with its name and port (`base_port + i`).
 2. In the Home app, tap **Add Accessory** and enter the `setup_code`. Do it once per camera: each one is a separate accessory.
 3. Live view and HomeKit Secure Video recording options are then configured from the Home app, on the camera.
 
@@ -182,7 +182,7 @@ Run the ignored tests with `cargo test -- --ignored` on a host with ffmpeg and, 
 
 **VAAPI does not work.**
 - Check that `/dev/dri/renderD128` exists on the host and in the container.
-- Inside the container: `docker compose run --rm --entrypoint vainfo local-dvr`. It should list H.264 profiles with `VAEntrypointEncSlice`. On Sandy Bridge the driver is `i965-va-driver`.
+- Inside the container: `docker compose run --rm --entrypoint vainfo hksv-rtsp-bridge`. It should list H.264 profiles with `VAEntrypointEncSlice`. On Sandy Bridge the driver is `i965-va-driver`.
 - If there is no driver or `vainfo` fails, use `hwaccel = "none"`.
 
 **"ffmpeg: not found" or missing encoders.**

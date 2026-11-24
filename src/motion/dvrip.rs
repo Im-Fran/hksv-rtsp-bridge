@@ -315,7 +315,7 @@ mod tests {
     #[ignore]
     async fn live_listen_90s() {
         let _ = tracing_subscriber::fmt()
-            .with_env_filter("local_dvr=debug")
+            .with_env_filter("hksv_rtsp_bridge=debug")
             .try_init();
         let url = std::env::var("SPIKE_DVRIP_URL").unwrap();
         let t = parse_url(&url).unwrap();

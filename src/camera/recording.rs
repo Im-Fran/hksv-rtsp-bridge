@@ -290,7 +290,7 @@ struct Fifo(PathBuf);
 impl Fifo {
     fn new() -> Result<Fifo> {
         let p = std::env::temp_dir().join(format!(
-            "local-dvr-rec-{}-{:08x}.fifo",
+            "hksv-rtsp-bridge-rec-{}-{:08x}.fifo",
             std::process::id(),
             rand::random::<u32>()
         ));
@@ -1537,7 +1537,7 @@ mod tests {
                 break;
             }
         }
-        let out = std::env::var("REC_OUT").unwrap_or_else(|_| "/tmp/local-dvr-rec.mp4".into());
+        let out = std::env::var("REC_OUT").unwrap_or_else(|_| "/tmp/hksv-rtsp-bridge-rec.mp4".into());
         std::fs::write(&out, &mp4).unwrap();
         println!("fMP4: {} bytes in {:?}", mp4.len(), t0.elapsed());
         drop(hub);

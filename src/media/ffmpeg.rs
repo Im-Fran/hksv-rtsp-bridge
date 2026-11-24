@@ -63,9 +63,9 @@ pub struct Ffmpeg {
 }
 
 impl Ffmpeg {
-    /// `ffmpeg` binary from PATH (override with `LOCAL_DVR_FFMPEG`). Kills the process on drop.
+    /// `ffmpeg` binary from PATH (override with `HKSV_RTSP_BRIDGE_FFMPEG`). Kills the process on drop.
     pub fn spawn(args: Vec<String>) -> Result<Ffmpeg> {
-        let bin = std::env::var("LOCAL_DVR_FFMPEG").unwrap_or_else(|_| "ffmpeg".into());
+        let bin = std::env::var("HKSV_RTSP_BRIDGE_FFMPEG").unwrap_or_else(|_| "ffmpeg".into());
         Self::spawn_bin(&bin, args)
     }
 
