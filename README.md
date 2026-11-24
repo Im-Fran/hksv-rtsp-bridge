@@ -58,8 +58,8 @@ Target platform: `x86_64-unknown-linux-gnu`. Building and running the tests that
 ### 1. Clone and configure
 
 ```bash
-git clone <this repository>
-cd local-dvr
+git clone https://github.com/Im-Fran/hksv-rtsp-bridge.git
+cd hksv-rtsp-bridge
 cp config.example.toml config.toml   # git-ignored; never commit real credentials
 ```
 
