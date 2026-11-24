@@ -75,6 +75,14 @@ docker compose logs -f local-dvr
 
 `compose.yaml` uses `network_mode: host` (required for mDNS) and mounts `./config.toml` (read-only), `./state` and `/dev/dri`. Remove the `/dev/dri` block if you use `hwaccel = "none"` or the host has no Intel GPU.
 
+Prebuilt images are published to GitHub Container Registry on every release tag (`linux/amd64`):
+
+```bash
+docker pull ghcr.io/im-fran/hksv-rtsp-bridge:latest
+```
+
+To use it, replace `build: .` with `image: ghcr.io/im-fran/hksv-rtsp-bridge:<version>` in `compose.yaml`.
+
 ### 3. Or build and run from source
 
 ```bash
